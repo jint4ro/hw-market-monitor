@@ -31,6 +31,7 @@ DB_PARAMS = {
 class GPUForm(StatesGroup):
     budget = State()  # Шаг 1: Ожидаем бюджет
     brand = State()   # Шаг 2: Ожидаем бренд
+    vram = State()    # Шаг 3: Ожидаем объем видеопамяти
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -58,33 +59,37 @@ def get_db_stats():
     except Exception as e:
         return f"❌ Ошибка БД: {e}"
     
-def get_db_advanced_search(max_price, brand):
-    """Ищет карты по бюджету и названию бренда"""
+def get_db_advanced_search(max_price, brand, vram):
+    """Ищет карты по бюджету, бренду и объему памяти"""
     try:
         conn = psycopg2.connect(**DB_PARAMS)
         cursor = conn.cursor()
 
-        # ILIKE позволяет искать текст без учета регистра (msi = MSI)
+        # В запросе ровно ТРИ символа %s
         query = """
             SELECT product_name, price, link 
             FROM gpu_prices 
             WHERE price <= %s 
               AND product_name ILIKE %s 
+              AND product_name ILIKE %s
               AND price IS NOT NULL 
             ORDER BY price ASC 
             LIMIT 3;
         """
-        # Добавляем % вокруг бренда, чтобы искать его в любом месте названия
-        cursor.execute(query, (max_price, f"%{brand}%"))
+        # Передаем ровно ТРИ аргумента
+        cursor.execute(query, (max_price, f"%{brand}%", f"%{vram}%"))
         results = cursor.fetchall()
         
         cursor.close()
         conn.close()
 
-        if not results:
-            return f"😔 Не нашел карт бренда **{brand}** дешевле {max_price} руб."
+        display_brand = brand.upper() if brand else "ЛЮБОГО БРЕНДА"
+        display_vram = vram if vram else "ЛЮБЫМ ОБЪЕМОМ ПАМЯТИ"
 
-        text = f"🎯 **ПОДБОРКА {brand.upper()} ДО {max_price} РУБ:**\n\n"
+        if not results:
+            return f"😔 Не нашел карт **{display_brand}** ({display_vram}) дешевле {max_price} руб."
+
+        text = f"🎯 **ПОДБОРКА {display_brand} | {display_vram} | ДО {max_price} РУБ:**\n\n"
         for idx, row in enumerate(results, 1):
             text += f"{idx}. **{row[0]}**\n💸 Цена: {row[1]:,} руб.\n🔗 [Ссылка]({row[2]})\n\n".replace(',', ' ')
             
@@ -195,29 +200,61 @@ async def process_budget(message: types.Message, state: FSMContext):
 
 # 3. Бот ловит бренд, достает бюджет из памяти и делает запрос в БД
 # Фильтр F.data.startswith("brand_") ловит только нажатия на наши кнопки
+# --- ШАГ 2: Ловим бренд и спрашиваем про память ---
 @dp.callback_query(GPUForm.brand, F.data.startswith("brand_"))
 async def process_brand_callback(callback: CallbackQuery, state: FSMContext):
-    # Достаем название бренда из callback_data (например, из "brand_msi" достаем "msi")
     brand = callback.data.split("_")[1]
-    
-    # Если выбрали "Любой", передаем пустую строку, чтобы SQL-запрос нашел всё
     if brand == "any":
         brand = ""
-        display_brand = "ЛЮБОЙ БРЕНД"
-    else:
-        display_brand = brand.upper()
     
+    # Сохраняем бренд в память машины состояний
+    await state.update_data(brand=brand)
+    
+    # Выводим новую клавиатуру для памяти
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="8 ГБ", callback_data="vram_8"),
+            InlineKeyboardButton(text="12 ГБ", callback_data="vram_12")
+        ],
+        [
+            InlineKeyboardButton(text="16 ГБ", callback_data="vram_16"),
+            InlineKeyboardButton(text="🎲 Любой", callback_data="vram_any")
+        ]
+    ])
+    
+    await callback.message.edit_text("Принято! Сколько нужно видеопамяти?", reply_markup=keyboard)
+    # Переключаем бота на ожидание памяти
+    await state.set_state(GPUForm.vram)
+    await callback.answer()
+
+# --- ШАГ 3: Ловим память и идем в базу ---
+@dp.callback_query(GPUForm.vram, F.data.startswith("vram_"))
+async def process_vram_callback(callback: CallbackQuery, state: FSMContext):
+    vram_data = callback.data.split("_")[1]
+    
+    # ДНС обычно пишет объем памяти как "8 ГБ", поэтому формируем строку для поиска
+    if vram_data == "any":
+        vram = ""
+    else:
+        vram = f"{vram_data} ГБ"
+        
+    # Достаем бюджет и бренд из памяти
     user_data = await state.get_data()
     max_price = user_data['budget']
+    brand = user_data['brand']
     
-    # Меняем текст сообщения с кнопками на статус поиска
-    await callback.message.edit_text(f"⏳ Ищу карты **{display_brand}** до {max_price} руб...", parse_mode="Markdown")
+    display_brand = brand.upper() if brand else "ЛЮБОЙ БРЕНД"
+    display_vram = vram if vram else "ЛЮБОЙ ОБЪЕМ"
     
-    result_text = get_db_advanced_search(max_price, brand)
+    await callback.message.edit_text(f"⏳ Ищу: **{display_brand}** | **{display_vram}** | до **{max_price}** руб...", parse_mode="Markdown")
+    
+    # Финальный запрос в базу
+    result_text = get_db_advanced_search(max_price, brand, vram)
     await callback.message.answer(result_text, parse_mode="Markdown", disable_web_page_preview=True)
     
+    # Очищаем состояния, диалог завершен
     await state.clear()
-    await callback.answer() # Обязательно "отвечаем" телеграму, чтобы часики на кнопке перестали крутиться
+    await callback.answer()
 
 # --- ЗАПУСК БОТА ---
 async def main():
