@@ -2,11 +2,11 @@ import os
 from dotenv import load_dotenv
 import asyncio
 import psycopg2
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
-from aiogram import F # Магический фильтр для перехвата текста
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 # --- НАСТРОЙКИ (СЕКРЕТЫ) ---
 # Загружаем данные из файла .env
@@ -173,29 +173,51 @@ async def process_budget(message: types.Message, state: FSMContext):
         await message.answer("⚠️ Пожалуйста, введи только числа (например, 45000).")
         return
     
-    # Сохраняем бюджет в память машины состояний
     await state.update_data(budget=int(message.text))
     
-    await message.answer("Отлично. Какой бренд предпочитаешь?\n(Например: MSI, Palit, Gigabyte, Asus):")
+    # Создаем клавиатуру с брендами
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="MSI", callback_data="brand_msi"),
+            InlineKeyboardButton(text="Palit", callback_data="brand_palit")
+        ],
+        [
+            InlineKeyboardButton(text="Gigabyte", callback_data="brand_gigabyte"),
+            InlineKeyboardButton(text="ASUS", callback_data="brand_asus")
+        ],
+        [
+            InlineKeyboardButton(text="🎲 Любой бренд", callback_data="brand_any")
+        ]
+    ])
+    
+    await message.answer("Отлично. Какой бренд предпочитаешь?", reply_markup=keyboard)
     await state.set_state(GPUForm.brand)
 
 # 3. Бот ловит бренд, достает бюджет из памяти и делает запрос в БД
-@dp.message(GPUForm.brand)
-async def process_brand(message: types.Message, state: FSMContext):
-    brand = message.text
+# Фильтр F.data.startswith("brand_") ловит только нажатия на наши кнопки
+@dp.callback_query(GPUForm.brand, F.data.startswith("brand_"))
+async def process_brand_callback(callback: CallbackQuery, state: FSMContext):
+    # Достаем название бренда из callback_data (например, из "brand_msi" достаем "msi")
+    brand = callback.data.split("_")[1]
     
-    # Достаем сохраненный бюджет из памяти
+    # Если выбрали "Любой", передаем пустую строку, чтобы SQL-запрос нашел всё
+    if brand == "any":
+        brand = ""
+        display_brand = "ЛЮБОЙ БРЕНД"
+    else:
+        display_brand = brand.upper()
+    
     user_data = await state.get_data()
     max_price = user_data['budget']
     
-    await message.answer(f"⏳ Ищу карты {brand} до {max_price} руб...")
+    # Меняем текст сообщения с кнопками на статус поиска
+    await callback.message.edit_text(f"⏳ Ищу карты **{display_brand}** до {max_price} руб...", parse_mode="Markdown")
     
-    # Идем в базу данных
     result_text = get_db_advanced_search(max_price, brand)
-    await message.answer(result_text, parse_mode="Markdown", disable_web_page_preview=True)
+    await callback.message.answer(result_text, parse_mode="Markdown", disable_web_page_preview=True)
     
-    # Завершаем диалог и стираем состояния
     await state.clear()
+    await callback.answer() # Обязательно "отвечаем" телеграму, чтобы часики на кнопке перестали крутиться
 
 # --- ЗАПУСК БОТА ---
 async def main():
