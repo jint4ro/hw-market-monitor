@@ -4,6 +4,9 @@ import asyncio
 import psycopg2
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command, CommandObject
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
+from aiogram import F # Магический фильтр для перехвата текста
 
 # --- НАСТРОЙКИ (СЕКРЕТЫ) ---
 # Загружаем данные из файла .env
@@ -23,6 +26,11 @@ DB_PARAMS = {
     "host": "localhost",
     "port": "5432"
 }
+
+# --- МАШИНА СОСТОЯНИЙ (ШАГИ ДИАЛОГА) ---
+class GPUForm(StatesGroup):
+    budget = State()  # Шаг 1: Ожидаем бюджет
+    brand = State()   # Шаг 2: Ожидаем бренд
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -46,6 +54,40 @@ def get_db_stats():
         text += f"🔹 Собранных цен: {total} шт.\n"
         if avg_price:
             text += f"🔹 Средняя цена: {int(avg_price):,} руб.\n".replace(',', ' ')
+        return text
+    except Exception as e:
+        return f"❌ Ошибка БД: {e}"
+    
+def get_db_advanced_search(max_price, brand):
+    """Ищет карты по бюджету и названию бренда"""
+    try:
+        conn = psycopg2.connect(**DB_PARAMS)
+        cursor = conn.cursor()
+
+        # ILIKE позволяет искать текст без учета регистра (msi = MSI)
+        query = """
+            SELECT product_name, price, link 
+            FROM gpu_prices 
+            WHERE price <= %s 
+              AND product_name ILIKE %s 
+              AND price IS NOT NULL 
+            ORDER BY price ASC 
+            LIMIT 3;
+        """
+        # Добавляем % вокруг бренда, чтобы искать его в любом месте названия
+        cursor.execute(query, (max_price, f"%{brand}%"))
+        results = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+
+        if not results:
+            return f"😔 Не нашел карт бренда **{brand}** дешевле {max_price} руб."
+
+        text = f"🎯 **ПОДБОРКА {brand.upper()} ДО {max_price} РУБ:**\n\n"
+        for idx, row in enumerate(results, 1):
+            text += f"{idx}. **{row[0]}**\n💸 Цена: {row[1]:,} руб.\n🔗 [Ссылка]({row[2]})\n\n".replace(',', ' ')
+            
         return text
     except Exception as e:
         return f"❌ Ошибка БД: {e}"
@@ -117,6 +159,43 @@ async def cmd_search(message: types.Message, command: CommandObject):
     result_text = get_db_search(max_price)
     # disable_web_page_preview=True убирает огромные картинки-превью от ссылок
     await message.answer(result_text, parse_mode="Markdown", disable_web_page_preview=True)
+
+# 1. Пользователь пишет /find, бот включает состояние "Ожидание бюджета"
+@dp.message(Command("find"))
+async def start_find_dialog(message: types.Message, state: FSMContext):
+    await message.answer("Давай подберем видеокарту! 🎮\n\nНапиши свой максимальный бюджет (только цифры):")
+    await state.set_state(GPUForm.budget)
+
+# 2. Бот ловит ответ (бюджет) и переключается на "Ожидание бренда"
+@dp.message(GPUForm.budget)
+async def process_budget(message: types.Message, state: FSMContext):
+    if not message.text.isdigit():
+        await message.answer("⚠️ Пожалуйста, введи только числа (например, 45000).")
+        return
+    
+    # Сохраняем бюджет в память машины состояний
+    await state.update_data(budget=int(message.text))
+    
+    await message.answer("Отлично. Какой бренд предпочитаешь?\n(Например: MSI, Palit, Gigabyte, Asus):")
+    await state.set_state(GPUForm.brand)
+
+# 3. Бот ловит бренд, достает бюджет из памяти и делает запрос в БД
+@dp.message(GPUForm.brand)
+async def process_brand(message: types.Message, state: FSMContext):
+    brand = message.text
+    
+    # Достаем сохраненный бюджет из памяти
+    user_data = await state.get_data()
+    max_price = user_data['budget']
+    
+    await message.answer(f"⏳ Ищу карты {brand} до {max_price} руб...")
+    
+    # Идем в базу данных
+    result_text = get_db_advanced_search(max_price, brand)
+    await message.answer(result_text, parse_mode="Markdown", disable_web_page_preview=True)
+    
+    # Завершаем диалог и стираем состояния
+    await state.clear()
 
 # --- ЗАПУСК БОТА ---
 async def main():
