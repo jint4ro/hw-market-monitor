@@ -13,7 +13,7 @@ Telegram-бот и асинхронный ETL-пайплайн для монит
 ## 🛠 Стек технологий
 * **Язык:** Python 3.12
 * **Telegram Bot API:** Aiogram 3.x (FSM, Callback Queries)
-* **База данных:** PostgreSQL (драйвер `pg8000`)
+* **База данных:** PostgreSQL (драйвер `psycopg2`)
 * **Скрапинг:** Selenium, undetected-chromedriver
 * **Инфраструктура:** Git, python-dotenv (безопасное хранение токенов)
 
