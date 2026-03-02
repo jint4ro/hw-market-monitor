@@ -44,7 +44,7 @@ def init_driver():
     options.add_argument('--disable-notifications')
     
     # В undetected_chromedriver режим "без монитора" надежнее включать прямо здесь:
-    driver = uc.Chrome(options=options, headless=True)
+    driver = uc.Chrome(options=options, headless=True, version_main=145)
     return driver
 
 print("🚀 Запускаю мега-парсер с пагинацией...")
