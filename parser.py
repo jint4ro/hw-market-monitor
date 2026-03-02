@@ -35,13 +35,21 @@ def save_to_db(name, price, link):
         return False
 
 # Настройки
-options = uc.ChromeOptions()
-options.add_argument("--disable-notifications")
-prefs = {"profile.default_content_setting_values.geolocation": 2}
-options.add_experimental_option("prefs", prefs)
+def init_driver(): 
+    options = uc.ChromeOptions()
+    
+    # --- НОВЫЕ НАСТРОЙКИ ДЛЯ СЕРВЕРА ---
+    options.add_argument('--headless') 
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    # -----------------------------------
+    
+    # Запускаем драйвер с новыми опциями
+    driver = uc.Chrome(options=options)
+    return driver
 
 print("🚀 Запускаю мега-парсер с пагинацией...")
-driver = uc.Chrome(version_main=144, options=options, use_subprocess=True)
+driver = init_driver()
 wait = WebDriverWait(driver, 20)
 
 try:
