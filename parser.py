@@ -38,18 +38,17 @@ def save_to_db(name, price, link):
 def init_driver(): 
     options = uc.ChromeOptions()
     
-    # --- НОВЫЕ НАСТРОЙКИ ДЛЯ СЕРВЕРА ---
-    options.add_argument('--headless') 
+    # Обязательные настройки для Linux-сервера под пользователем root
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    # -----------------------------------
+    options.add_argument('--disable-notifications')
     
-    # Запускаем драйвер с новыми опциями
-    driver = uc.Chrome(options=options)
+    # В undetected_chromedriver режим "без монитора" надежнее включать прямо здесь:
+    driver = uc.Chrome(options=options, headless=True)
     return driver
 
 print("🚀 Запускаю мега-парсер с пагинацией...")
-driver = init_driver()
+driver = init_driver() 
 wait = WebDriverWait(driver, 20)
 
 try:
