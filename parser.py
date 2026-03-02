@@ -35,16 +35,19 @@ def save_to_db(name, price, link):
         return False
 
 # Настройки
+# Настройки для Linux-сервера
 def init_driver(): 
     options = uc.ChromeOptions()
     
-    # Обязательные настройки для Linux-сервера под пользователем root
+    # Современный режим без монитора для новых версий Chrome
+    options.add_argument('--headless=new') 
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-notifications')
+    options.add_argument('--disable-gpu') # Отключаем графику для экономии ОЗУ
     
-    # В undetected_chromedriver режим "без монитора" надежнее включать прямо здесь:
-    driver = uc.Chrome(options=options, headless=True, version_main=145)
+    # Убрали headless=True отсюда! Версию 145 оставляем.
+    driver = uc.Chrome(options=options, version_main=145)
     return driver
 
 print("🚀 Запускаю мега-парсер с пагинацией...")
