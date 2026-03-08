@@ -35,9 +35,7 @@ def save_to_db(name, price, link):
         return False
 
 def init_driver(): 
-    def init_driver(): 
-    options = webdriver.ChromeOptions()
-    
+    options = webdriver.ChromeOptions()   
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-notifications')
