@@ -1,10 +1,11 @@
 import time
 import psycopg2
-from selenium import webdriver 
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+# Твоя удаленная БД на сервере
 DB_PARAMS = {
     "database": "postgres",
     "user": "postgres",
@@ -31,32 +32,28 @@ def save_to_db(name, price, link):
         conn.close()
         return True
     except Exception as e:
-        print(f"❌ Ошибка подключения к БД: {e}")
+        print(f"❌ Ошибка БД: {e}")
         return False
 
+# Идеальная локальная настройка с обходом защиты
 def init_driver(): 
-    options = webdriver.ChromeOptions()  
-    
-    # Для Windows оставляем только маскировку от ботов и полный экран
-    options.add_argument('--start-maximized')
-    options.add_argument('--disable-blink-features=AutomationControlled')
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
-    
-    driver = webdriver.Chrome(options=options)
+    options = uc.ChromeOptions()
+    # Запускаем оригинальный undetected_chromedriver (без headless!)
+    # Версию не указываем, пусть сам подстроит под твой Windows Chrome
+    driver = uc.Chrome(options=options)
     driver.set_page_load_timeout(60) 
     return driver
 
-print("🚀 Запускаю локальный парсер (с сохранением в удаленную БД)...")
+print("🚀 Запускаю мега-парсер с undetected_chromedriver...")
 driver = init_driver() 
 wait = WebDriverWait(driver, 20)
 
 try:
     target_url = "https://www.dns-shop.ru/search/?q=RTX+4060"
-    print(f"🌐 Открываю сайт: {target_url}")
+    print(f"🌐 Иду прямо по ссылке: {target_url}")
     driver.get(target_url)
     
-    print("⏳ Даю сайту 5 секунд. Если вылезет защита (Qrator) — у тебя есть время решить ее мышкой!")
+    print("⏳ Даю сайту 5 секунд. Если будет капча — прокликай ее руками!")
     time.sleep(5)
     
     page_number = 1
@@ -65,7 +62,7 @@ try:
         print(f"\n📄 --- ОБРАБАТЫВАЮ СТРАНИЦУ {page_number} ---")
         
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.catalog-product")))
-        time.sleep(3) # Ждем подгрузки цен
+        time.sleep(3) 
         
         products = driver.find_elements(By.CSS_SELECTOR, "div.catalog-product")
         print(f"📦 Найдено товаров на странице: {len(products)}")
@@ -85,7 +82,7 @@ try:
                 
                 if save_to_db(name, final_price, link):
                     print(f"✅ Ушло в БД на сервер: {name[:25]}... | {final_price} руб.")
-                
+                    
             except Exception:
                 continue
                 
