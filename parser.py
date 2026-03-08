@@ -1,6 +1,6 @@
 import time
 import psycopg2
-import undetected_chromedriver as uc
+from selenium import webdriver 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
@@ -35,25 +35,23 @@ def save_to_db(name, price, link):
         return False
 
 def init_driver(): 
-    options = uc.ChromeOptions()
+    def init_driver(): 
+    options = webdriver.ChromeOptions()
     
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-notifications')
     options.add_argument('--disable-gpu')
-    
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' \
     'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-    options.page_load_strategy = 'eager' 
-    options.add_argument('--blink-settings=imagesEnabled=false')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+    # ----------------------------------
     
-    driver = uc.Chrome(
-        options=options, 
-        version_main=145, 
-        use_subprocess=True
-    )
-    
+    # Запускаем официальный драйвер (версию указывать больше не нужно!)
+    driver = webdriver.Chrome(options=options)
     driver.set_page_load_timeout(60) 
     return driver
 
