@@ -35,7 +35,9 @@ def save_to_db(name, price, link):
         return False
 
 def init_driver(): 
-    options = webdriver.ChromeOptions()   
+    options = webdriver.ChromeOptions()  
+    options.add_argument('--no-zygote')
+    options.add_argument('--disable-software-rasterizer') 
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-notifications')
@@ -58,22 +60,21 @@ driver = init_driver()
 wait = WebDriverWait(driver, 20)
 
 try:
-    print("🌐 Загружаю страницу ДНС...")
-    driver.get("https://www.dns-shop.ru/")
+    target_url = "https://www.dns-shop.ru/search/?q=RTX+4060"
+    print(f"🌐 Иду прямо по ссылке: {target_url}")
+    driver.get(target_url)
     
-    print("⏳ Жду 5 секунд для прогрузки JS и обхода защиты от ботов...")
+    print("⏳ Жду 5 секунд для прогрузки JS...")
     time.sleep(5)
-
-    print("✅ Страница загружена! Ищу строку поиска...")
     
-    # Ищем строку поиска
-    search_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[placeholder*='Поиск']")))
-    search_box.click()
-    search_box.send_keys("RTX 4060")
-    time.sleep(1)
-    search_box.send_keys(Keys.RETURN)
+    page_number = 1 # Счетчик страниц для логов, чтобы видеть прогресс
     
-    page_number = 1 # Счетчик страниц
+    while True:
+        print(f"\n📄 --- ОБРАБАТЫВАЮ СТРАНИЦУ {page_number} ---")
+        
+        # Ждем появления именно товаров
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.catalog-product")))
+        time.sleep(3) # Ждем подгрузки цен
     
     # Бесконечный цикл, который прервется только когда закончатся страницы
     while True:
