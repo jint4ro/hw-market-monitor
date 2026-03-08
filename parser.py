@@ -64,6 +64,10 @@ wait = WebDriverWait(driver, 20)
 try:
     print("🌐 Загружаю страницу ДНС...")
     driver.get("https://www.dns-shop.ru/")
+    
+    print("⏳ Жду 5 секунд для прогрузки JS и обхода защиты от ботов...")
+    time.sleep(5)
+
     print("✅ Страница загружена! Ищу строку поиска...")
     
     # Ищем строку поиска
@@ -135,6 +139,8 @@ try:
 
 except Exception as e:
     print(f"❌ Критическая ошибка: {e}")
+    driver.save_screenshot("error_screenshot.png")
+    print("📸 Скриншот сохранен как 'error_screenshot.png' для диагностики.")
 
 finally:
     driver.quit()
