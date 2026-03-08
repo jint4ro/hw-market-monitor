@@ -34,9 +34,6 @@ def save_to_db(name, price, link):
     except Exception as e:
         return False
 
-# Настройки
-# Настройки для Linux-сервера
-# Настройки для Linux-сервера
 def init_driver(): 
     options = uc.ChromeOptions()
     
@@ -45,17 +42,17 @@ def init_driver():
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-notifications')
     options.add_argument('--disable-gpu')
+    options.add_argument('--window-size=1920,1080')
+    options.add_argument('--user agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' \
+    'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     
-    # Секретный соус для Linux: 
-    # 1. Используем встроенный headless=True библиотеки
-    # 2. Обязательно use_subprocess=True, чтобы не падал
-    # 3. Версия 145
     driver = uc.Chrome(
         options=options, 
         version_main=145, 
         headless=True, 
         use_subprocess=True
     )
+    driver.set_page_load_timeout(30)
     return driver
 
 print("🚀 Запускаю мега-парсер с пагинацией...")
@@ -63,7 +60,9 @@ driver = init_driver()
 wait = WebDriverWait(driver, 20)
 
 try:
+    print("🌐 Загружаю страницу ДНС...")
     driver.get("https://www.dns-shop.ru/")
+    print("✅ Страница загружена! Ищу строку поиска...")
     
     # Ищем строку поиска
     search_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[placeholder*='Поиск']")))
