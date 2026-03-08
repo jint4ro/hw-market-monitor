@@ -67,14 +67,17 @@ try:
     print("⏳ Жду 5 секунд для прогрузки JS...")
     time.sleep(5)
     
-    page_number = 1 # Счетчик страниц для логов, чтобы видеть прогресс
+    # === НОВАЯ ШПИОНСКАЯ ЛОГИКА ===
+    print("💾 Делаю слепок HTML-кода страницы...")
+    html_content = driver.page_source
     
-    while True:
-        print(f"\n📄 --- ОБРАБАТЫВАЮ СТРАНИЦУ {page_number} ---")
+    with open("debug_page.html", "w", encoding="utf-8") as f:
+        f.write(html_content)
         
-        # Ждем появления именно товаров
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.catalog-product")))
-        time.sleep(3) # Ждем подгрузки цен
+    print("✅ Слепок сохранен в файл debug_page.html!")
+    print("🛑 Принудительно останавливаю скрипт для анализа...")
+    driver.quit()
+    exit(0)
     
     # Бесконечный цикл, который прервется только когда закончатся страницы
     while True:
