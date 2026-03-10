@@ -23,7 +23,7 @@ DB_PARAMS = {
     "database": "postgres",
     "user": "postgres",
     "password": "1234",  # Пароль от БД тоже можно вынести в .env, но пока оставим так
-    "host": "localhost",
+    "host": "85.198.69.218",
     "port": "5432"
 }
 
