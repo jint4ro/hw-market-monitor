@@ -19,19 +19,31 @@ def save_to_db(name, price, link):
         conn = psycopg2.connect(**DB_PARAMS)
         conn.autocommit = True
         cursor = conn.cursor()
-        upsert_query = """
-            INSERT INTO gpu_prices (product_name, price, link, parsed_at)
-            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (link) 
-            DO UPDATE SET
-                price = EXCLUDED.price,
-                parsed_at = EXCLUDED.parsed_at;
-        """
-        cursor.execute(upsert_query, (name, price, link))
+
+        # Шаг 1: Записываем карту в справочник (или просто получаем ее ID, если она уже там есть)
+        # Хитрый трюк: DO UPDATE нужен только для того, чтобы сработал RETURNING id
+        cursor.execute("""
+            INSERT INTO gpu_info (product_name, link)
+            VALUES (%s, %s)
+            ON CONFLICT (link) DO UPDATE 
+            SET product_name = EXCLUDED.product_name
+            RETURNING id;
+        """, (name, link))
+        
+        gpu_id = cursor.fetchone()[0]
+
+        # Шаг 2: Записываем свежую цену в историю
+        if price is not None:
+            cursor.execute("""
+                INSERT INTO price_history (gpu_id, price, parsed_at)
+                VALUES (%s, %s, CURRENT_TIMESTAMP);
+            """, (gpu_id, price))
+
         cursor.close()
         conn.close()
         return True
     except Exception as e:
+        print(f"❌ Ошибка БД: {e}")
         return False
 
 # Настройки
