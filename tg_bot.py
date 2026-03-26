@@ -36,6 +36,31 @@ class GPUForm(StatesGroup):
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+def get_db_stats():
+    """Возвращает общую аналитику из базы"""
+    try:
+        conn = psycopg2.connect(**DB_PARAMS)
+        cursor = conn.cursor()
+
+        # Считаем количество уникальных видеокарт (из справочника)
+        cursor.execute("SELECT COUNT(*) FROM gpu_info;")
+        total = cursor.fetchone()[0]
+
+        # Считаем среднюю цену 
+        cursor.execute("SELECT ROUND(AVG(price)) FROM price_history WHERE price IS NOT NULL;")
+        avg_price = cursor.fetchone()[0]
+
+        cursor.close()
+        conn.close()
+
+        text = f"📊 **СВОДКА ПО БАЗЕ**\n\n"
+        text += f"🔹 Отслеживаемых карт: {total} шт.\n"
+        if avg_price:
+            text += f"🔹 Средняя цена: {int(avg_price):,} руб.\n".replace(',', ' ')
+        return text
+    except Exception as e:
+        return f"❌ Ошибка БД: {e}"
+
 def get_db_advanced_search(max_price, brand, vram):
     """Ищет карты по бюджету, бренду и объему памяти (по свежим ценам)"""
     try:
