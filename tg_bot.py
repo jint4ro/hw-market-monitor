@@ -36,47 +36,28 @@ class GPUForm(StatesGroup):
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-def get_db_stats():
-    """Возвращает общую аналитику из базы"""
-    try:
-        conn = psycopg2.connect(**DB_PARAMS)
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT COUNT(*) FROM gpu_prices;")
-        total = cursor.fetchone()[0]
-
-        cursor.execute("SELECT ROUND(AVG(price)) FROM gpu_prices WHERE price IS NOT NULL;")
-        avg_price = cursor.fetchone()[0]
-
-        cursor.close()
-        conn.close()
-
-        text = f"📊 **СВОДКА ПО БАЗЕ**\n\n"
-        text += f"🔹 Собранных цен: {total} шт.\n"
-        if avg_price:
-            text += f"🔹 Средняя цена: {int(avg_price):,} руб.\n".replace(',', ' ')
-        return text
-    except Exception as e:
-        return f"❌ Ошибка БД: {e}"
-    
 def get_db_advanced_search(max_price, brand, vram):
-    """Ищет карты по бюджету, бренду и объему памяти"""
+    """Ищет карты по бюджету, бренду и объему памяти (по свежим ценам)"""
     try:
         conn = psycopg2.connect(**DB_PARAMS)
         cursor = conn.cursor()
 
-        # В запросе ровно ТРИ символа %s
         query = """
-            SELECT product_name, price, link 
-            FROM gpu_prices 
-            WHERE price <= %s 
-              AND product_name ILIKE %s 
-              AND product_name ILIKE %s
-              AND price IS NOT NULL 
-            ORDER BY price ASC 
+            WITH LatestPrices AS (
+                SELECT DISTINCT ON (gpu_id) gpu_id, price
+                FROM price_history
+                WHERE price IS NOT NULL
+                ORDER BY gpu_id, parsed_at DESC
+            )
+            SELECT g.product_name, l.price, g.link 
+            FROM gpu_info g
+            JOIN LatestPrices l ON g.id = l.gpu_id
+            WHERE l.price <= %s 
+              AND g.product_name ILIKE %s 
+              AND g.product_name ILIKE %s
+            ORDER BY l.price ASC 
             LIMIT 3;
         """
-        # Передаем ровно ТРИ аргумента
         cursor.execute(query, (max_price, f"%{brand}%", f"%{vram}%"))
         results = cursor.fetchall()
         
@@ -98,17 +79,24 @@ def get_db_advanced_search(max_price, brand, vram):
         return f"❌ Ошибка БД: {e}"
 
 def get_db_search(max_price):
-    """Ищет топ-3 видеокарты дешевле max_price"""
+    """Ищет топ-3 видеокарты дешевле max_price (по самым свежим ценам)"""
     try:
         conn = psycopg2.connect(**DB_PARAMS)
         cursor = conn.cursor()
 
-        # SQL-запрос: ищем карты дешевле бюджета, сортируем по возрастанию цены, берем 3 штуки
+        # Сначала достаем последние цены (DISTINCT ON), затем джоиним инфу о карте
         query = """
-            SELECT product_name, price, link 
-            FROM gpu_prices 
-            WHERE price <= %s AND price IS NOT NULL 
-            ORDER BY price ASC 
+            WITH LatestPrices AS (
+                SELECT DISTINCT ON (gpu_id) gpu_id, price
+                FROM price_history
+                WHERE price IS NOT NULL
+                ORDER BY gpu_id, parsed_at DESC
+            )
+            SELECT g.product_name, l.price, g.link 
+            FROM gpu_info g
+            JOIN LatestPrices l ON g.id = l.gpu_id
+            WHERE l.price <= %s 
+            ORDER BY l.price ASC 
             LIMIT 3;
         """
         cursor.execute(query, (max_price,))
@@ -127,6 +115,61 @@ def get_db_search(max_price):
         return text
     except Exception as e:
         return f"❌ Ошибка БД: {e}"
+    
+def get_db_discounts():
+    """Ищет топ-5 видеокарт, которые сильнее всего подешевели"""
+    try:
+        conn = psycopg2.connect(**DB_PARAMS)
+        cursor = conn.cursor()
+
+        query = """
+        WITH PriceDynamics AS (
+            SELECT 
+                g.product_name,
+                p.price AS current_price,
+                LAG(p.price) OVER (PARTITION BY g.id ORDER BY p.parsed_at) AS old_price,
+                g.link
+            FROM 
+                price_history p
+            JOIN 
+                gpu_info g ON p.gpu_id = g.id
+        )
+        SELECT 
+            product_name, 
+            old_price, 
+            current_price, 
+            (old_price - current_price) AS discount,
+            link
+        FROM 
+            PriceDynamics
+        WHERE 
+            old_price IS NOT NULL 
+            AND current_price < old_price
+        ORDER BY 
+            discount DESC
+        LIMIT 5;
+        """
+        cursor.execute(query)
+        results = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+
+        if not results:
+            return "📉 Пока никаких скидок не зафиксировано. Цены стоят на месте или растут!"
+
+        text = "🔥 **ТОП-5 ПОДЕШЕВЕВШИХ ВИДЕОКАРТ:**\n\n"
+        for idx, row in enumerate(results, 1):
+            name, old_price, current_price, discount, link = row
+            # Форматируем текст, добавляя пробелы в тысячи для красоты
+            text += f"{idx}. **{name}**\n"
+            text += f"📉 Скидка: **{discount:,} руб.**\n".replace(',', ' ')
+            text += f"💸 Было: {old_price:,} руб. ➡️ Стало: {current_price:,} руб.\n".replace(',', ' ')
+            text += f"🔗 [Купить]({link})\n\n"
+            
+        return text
+    except Exception as e:
+        return f"❌ Ошибка БД: {e}"
 
 # --- ОБРАБОТЧИКИ КОМАНД ---
 
@@ -136,7 +179,9 @@ async def cmd_start(message: types.Message):
         "Привет! Я твой Data-ассистент. 🤖\n\n"
         "Доступные команды:\n"
         "📊 /stats — общая статистика\n"
-        "🔎 /search [сумма] — найти видеокарты по бюджету (например: /search 40000)"
+        "🔎 /search [сумма] — найти видеокарты по бюджету\n"
+        "🔥 /discounts — посмотреть, что подешевело\n"
+        "🎮 /find — интерактивный подбор видеокарты"
     )
 
 @dp.message(Command("stats"))
@@ -194,7 +239,7 @@ async def process_budget(message: types.Message, state: FSMContext):
             InlineKeyboardButton(text="🎲 Любой бренд", callback_data="brand_any")
         ]
     ])
-    
+         
     await message.answer("Отлично. Какой бренд предпочитаешь?", reply_markup=keyboard)
     await state.set_state(GPUForm.brand)
 
@@ -255,6 +300,12 @@ async def process_vram_callback(callback: CallbackQuery, state: FSMContext):
     # Очищаем состояния, диалог завершен
     await state.clear()
     await callback.answer()
+
+@dp.message(Command("discounts"))
+async def cmd_discounts(message: types.Message):
+    await message.answer("⏳ Ищу самые сочные скидки в базе...")
+    result_text = get_db_discounts()
+    await message.answer(result_text, parse_mode="Markdown", disable_web_page_preview=True)
 
 # --- ЗАПУСК БОТА ---
 async def main():
