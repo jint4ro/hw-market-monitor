@@ -53,7 +53,7 @@ prefs = {"profile.default_content_setting_values.geolocation": 2}
 options.add_experimental_option("prefs", prefs)
 
 print("🚀 Запускаю мега-парсер с пагинацией...")
-driver = uc.Chrome(version_main=145, options=options, use_subprocess=True)
+driver = uc.Chrome(version_main=146, options=options, use_subprocess=True)
 wait = WebDriverWait(driver, 20)
 
 try:
