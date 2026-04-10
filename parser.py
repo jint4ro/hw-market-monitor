@@ -5,12 +5,13 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
 DB_PARAMS = {
     "database": "postgres",
     "user": "postgres",
     "password": "1234", 
-    "host": "85.198.69.218",
+    "host": "85.198.69.218", 
     "port": "5432"
 }
 
@@ -20,8 +21,7 @@ def save_to_db(name, price, link):
         conn.autocommit = True
         cursor = conn.cursor()
 
-        # Шаг 1: Записываем карту в справочник (или просто получаем ее ID, если она уже там есть)
-        # Хитрый трюк: DO UPDATE нужен только для того, чтобы сработал RETURNING id
+        # Шаг 1: Записываем карту в справочник (или обновляем)
         cursor.execute("""
             INSERT INTO gpu_info (product_name, link)
             VALUES (%s, %s)
@@ -46,85 +46,110 @@ def save_to_db(name, price, link):
         print(f"❌ Ошибка БД: {e}")
         return False
 
-# Настройки
+# СПИСОК ЖЕЛАЕМЫХ ВИДЕОКАРТ
+target_gpus = [
+    "RTX 4060", 
+    "RTX 5070", 
+    "RTX 5080", 
+    "RTX 5090"
+]
+
+# Настройки браузера
 options = uc.ChromeOptions()
 options.add_argument("--disable-notifications")
 prefs = {"profile.default_content_setting_values.geolocation": 2}
 options.add_experimental_option("prefs", prefs)
 
-print("🚀 Запускаю мега-парсер с пагинацией...")
+print("🚀 Запускаю мульти-парсер NVIDIA...")
 driver = uc.Chrome(version_main=146, options=options, use_subprocess=True)
-wait = WebDriverWait(driver, 20)
+wait = WebDriverWait(driver, 15)
 
 try:
-    driver.get("https://www.dns-shop.ru/")
-    
-    driver.get("https://www.dns-shop.ru/")
-    
-    # Ищем строку поиска
-    search_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[placeholder*='Поиск']")))
-    search_box.click()
-    search_box.send_keys("RTX 4060")
-    time.sleep(1)
-    search_box.send_keys(Keys.RETURN)
-    
-    # Ждем появления хотя бы первых товаров
-    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.catalog-product")))
-    time.sleep(3) 
-
-    print("\n🔄 Начинаю прокрутку страницы для подгрузки всех товаров...")
-    
-    last_count = 0
-    retries = 0 # Защита на случай долгой загрузки элементов
-    
-    # Цикл прокрутки страницы до самого низа
-    while True:
-        # Крутим в самый низ
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(3) # Ждем, пока отработают скрипты сайта и подтянут новые товары
+    for gpu_model in target_gpus:
+        print(f"\n=========================================")
+        print(f"🔍 НАЧИНАЮ ПОИСК: {gpu_model}")
+        print(f"=========================================")
         
-        products = driver.find_elements(By.CSS_SELECTOR, "div.catalog-product")
-        current_count = len(products)
+        # Заходим на главную ДНС перед каждым новым поиском для сброса состояния
+        driver.get("https://www.dns-shop.ru/")
+        time.sleep(2)
         
-        print(f"📦 Загружено товаров на данный момент: {current_count}")
-        
-        if current_count == last_count:
-            retries += 1
-            # Если два раза крутанули, а новых товаров нет — значит, это точно конец списка
-            if retries >= 2:
-                print("🛑 Достигнут конец списка. Подгрузка завершена.")
-                break
-        else:
-            retries = 0 # Сбрасываем счетчик, если нашли новые товары
-            
-        last_count = current_count
-
-    print(f"\n📄 --- НАЧИНАЮ СБОР ДАННЫХ И ОТПРАВКУ В БД ({last_count} шт.) ---")
-    
-    # Теперь, когда все карточки прогружены в DOM, парсим их
-    for item in products:
         try:
-            name_tag = item.find_element(By.CSS_SELECTOR, "a.catalog-product__name")
-            name = name_tag.text
-            link = name_tag.get_attribute("href")
+            # Ищем строку поиска
+            search_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[placeholder*='Поиск']")))
             
-            try:
-                price_tag = item.find_element(By.CSS_SELECTOR, "div.product-buy__price")
-                clean_price_str = price_tag.text.replace("₽", "").replace(" ", "").strip()
-                final_price = int(clean_price_str) if clean_price_str.isdigit() else None
-            except:
-                final_price = None
+            # Надежная очистка строки поиска (через Ctrl+A -> Delete)
+            search_box.send_keys(Keys.CONTROL + "a")
+            search_box.send_keys(Keys.BACKSPACE)
+            time.sleep(1)
             
-            if save_to_db(name, final_price, link):
-                print(f"✅ Ушло в БД: {name[:25]}... | {final_price} руб.")
-                
-        except Exception:
-            continue
+            search_box.send_keys(gpu_model)
+            time.sleep(1)
+            search_box.send_keys(Keys.RETURN)
+            
+            # Ждем появления товаров или сообщения "Ничего не найдено"
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.catalog-product")))
+            time.sleep(3) 
+            
+        except TimeoutException:
+            print(f"⚠️ По запросу {gpu_model} ничего не найдено или сайт завис. Пропускаю...")
+            continue # Переходим к следующей модели в списке
 
-    print("\n🎉 ВЕСЬ КАТАЛОГ УСПЕШНО СОБРАН!")
+        print("🔄 Начинаю прокрутку страницы для подгрузки всех товаров...")
+        last_count = 0
+        retries = 0 
+        
+        # Цикл прокрутки страницы до самого низа (Infinite Scroll)
+        while True:
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(3) 
+            
+            products = driver.find_elements(By.CSS_SELECTOR, "div.catalog-product")
+            current_count = len(products)
+            print(f"📦 Загружено товаров: {current_count}")
+            
+            if current_count == last_count:
+                retries += 1
+                if retries >= 2:
+                    print("🛑 Достигнут конец списка.")
+                    break
+            else:
+                retries = 0 
+                
+            last_count = current_count
+
+        print(f"\n📄 --- НАЧИНАЮ СБОР ДАННЫХ ({last_count} шт.) ---")
+        
+        for item in products:
+            try:
+                name_tag = item.find_element(By.CSS_SELECTOR, "a.catalog-product__name")
+                name = name_tag.text
+                link = name_tag.get_attribute("href")
+                
+                # Защита от попадания в выборку мусора (аксессуаров, кабелей и тд)
+                if gpu_model.split()[1] not in name: # Проверяем, есть ли цифры (4060, 5070) в названии
+                    continue
+
+                try:
+                    price_tag = item.find_element(By.CSS_SELECTOR, "div.product-buy__price")
+                    clean_price_str = price_tag.text.replace("₽", "").replace(" ", "").strip()
+                    final_price = int(clean_price_str) if clean_price_str.isdigit() else None
+                except:
+                    final_price = None
+                
+                if save_to_db(name, final_price, link):
+                    print(f"✅ В БД: {name[:25]}... | {final_price} руб.")
+                    
+            except Exception:
+                continue
+                
+        print(f"⏳ Сбор по {gpu_model} завершен. Делаю паузу перед следующим запросом...")
+        time.sleep(5) # Пауза, чтобы не выглядеть как DDoS-атака
+
+    print("\n🎉 ВСЕ ЗАДАННЫЕ ЛИНЕЙКИ УСПЕШНО СОБРАНЫ И ОТПРАВЛЕНЫ В БД!")
 
 except Exception as e:
-    print(f"❌ Критическая ошибка: {e}")
+    print(f"❌ Критическая ошибка выполнения: {e}")
 
 finally:
     driver.quit()
