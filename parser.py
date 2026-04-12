@@ -10,7 +10,7 @@ from selenium.common.exceptions import TimeoutException
 DB_PARAMS = {
     "database": "postgres",
     "user": "postgres",
-    "password": "1234", 
+    "password": "QklXiC.>8S{aT5&", 
     "host": "85.198.69.218", 
     "port": "5432"
 }
