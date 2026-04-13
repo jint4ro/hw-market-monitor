@@ -11,8 +11,8 @@ DB_PARAMS = {
     "database": "postgres",
     "user": "postgres",
     "password": "QklXiC.>8S{aT5&", 
-    "host": "85.198.69.218", 
-    "port": "5432"
+    "host": "localhost", 
+    "port": "5433"
 }
 
 def save_to_db(name, price, link):
